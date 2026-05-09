@@ -1,0 +1,25 @@
+{
+  "scripts": {
+    "dev": "concurrently -n backend,client -c blue,green \"npm --prefix backend run dev\" \"npm --prefix client run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:client": "npm --prefix client run dev",
+    "screenshot": "node scripts/screenshot.mjs"
+  },
+  "dependencies": {
+    "autoprefixer": "^10.4.27",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "jspdf": "^4.2.1",
+    "mongoose": "^9.4.1",
+    "nodemon": "^3.1.14",
+    "openai": "^6.33.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.2"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "puppeteer-core": "^24.43.0"
+  }
+}

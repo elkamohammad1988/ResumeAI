@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Block protected app routes from indexing
+Disallow: /dashboard
+Disallow: /generator
+Disallow: /settings
+
+Sitemap: /sitemap.xml
