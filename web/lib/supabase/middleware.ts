@@ -2,7 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PROTECTED = ["/dashboard", "/generator", "/settings"];
-const AUTH_ROUTES = ["/login", "/register"];
+// Auth routes that should bounce signed-in users to the dashboard.
+// `/reset-password` is intentionally excluded — users land there *after*
+// clicking a recovery link and are temporarily signed in.
+const AUTH_ROUTES = ["/login", "/register", "/forgot-password"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signInWithPassword } from "@/app/auth/actions";
 import { Button } from "@/components/ui/button";
@@ -40,9 +41,17 @@ export function LoginForm() {
             />
           </div>
           <div>
-            <label className="block mb-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:text-accent-deep dark:hover:text-accent normal-case tracking-normal"
+              >
+                Forgot?
+              </Link>
+            </div>
             <Input
               name="password"
               type="password"
