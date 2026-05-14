@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import MarkdownText from "@/components/shared/MarkdownText";
+import { DownloadButtons } from "@/components/shared/DownloadButtons";
+import type { Template } from "@/types/database";
 import { deleteResumeAction } from "./actions";
 
 export const metadata = { title: "Resume · ResumeAI" };
@@ -92,6 +94,44 @@ export default async function ResumeDetailPage({
         </form>
       </header>
 
+      {/* Download CTAs */}
+      <div className="mb-8 p-5 bg-[#0a0a0a] dark:bg-zinc-900 rounded-xl flex flex-wrap items-center justify-between gap-4">
+        <div className="text-white min-w-0">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-accent">
+              <svg
+                viewBox="0 0 20 20"
+                className="h-3 w-3 text-black"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 011.42-1.42L8.5 12.08l6.79-6.79a1 1 0 011.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </span>
+            Your documents are ready
+          </p>
+          <p className="text-xs text-zinc-400 mt-1">
+            Polished PDFs in the {resume.template} template — ready to send.
+          </p>
+        </div>
+        <DownloadButtons
+          name={resume.name}
+          email={resume.email}
+          phone={resume.phone}
+          jobTitle={resume.job_title}
+          skills={resume.skills}
+          education={resume.education}
+          photo={resume.photo}
+          template={resume.template as Template}
+          resume={resume.resume}
+          coverLetter={resume.cover_letter}
+        />
+      </div>
+
       <Card className="overflow-hidden">
         <div className="px-5 py-3 bg-zinc-50 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-accent" />
@@ -118,10 +158,6 @@ export default async function ResumeDetailPage({
         </Card>
       )}
 
-      <p className="mt-6 text-xs text-zinc-500 dark:text-zinc-500 text-center">
-        PDF export coming in the next release. For now: copy the text or
-        re-generate with a different template.
-      </p>
     </div>
   );
 }
