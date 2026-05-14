@@ -114,28 +114,30 @@ export default async function DashboardPage({
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
           {resumes.map((r) => (
-            <li
-              key={r.id}
-              className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow transition"
-            >
-              <h3 className="font-semibold text-zinc-900 dark:text-white truncate">
-                {r.name}
-              </h3>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">
-                {r.job_title}
-              </p>
-              <div className="mt-2 flex items-center flex-wrap gap-x-2 gap-y-1 text-xs text-zinc-400 dark:text-zinc-500">
-                <span>{new Date(r.created_at).toLocaleDateString()}</span>
-                <span>·</span>
-                <Badge>{r.template}</Badge>
-                <Badge>{r.language.toUpperCase()}</Badge>
-                {r.job_description && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-accent-deep dark:text-accent bg-accent/10 border border-accent/20 rounded">
-                    <span className="h-1 w-1 rounded-full bg-accent" />
-                    Tailored
-                  </span>
-                )}
-              </div>
+            <li key={r.id}>
+              <Link
+                href={`/resumes/${r.id}`}
+                className="block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow hover:-translate-y-px transition-all"
+              >
+                <h3 className="font-semibold text-zinc-900 dark:text-white truncate">
+                  {r.name}
+                </h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">
+                  {r.job_title}
+                </p>
+                <div className="mt-2 flex items-center flex-wrap gap-x-2 gap-y-1 text-xs text-zinc-400 dark:text-zinc-500">
+                  <span>{new Date(r.created_at).toLocaleDateString()}</span>
+                  <span>·</span>
+                  <Badge>{r.template}</Badge>
+                  <Badge>{r.language.toUpperCase()}</Badge>
+                  {r.job_description && (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-accent-deep dark:text-accent bg-accent/10 border border-accent/20 rounded">
+                      <span className="h-1 w-1 rounded-full bg-accent" />
+                      Tailored
+                    </span>
+                  )}
+                </div>
+              </Link>
             </li>
           ))}
         </ul>
