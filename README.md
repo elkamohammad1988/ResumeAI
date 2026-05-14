@@ -119,22 +119,104 @@ npm run dev               # http://localhost:3000
 
 ---
 
-## 🌍 Deployment
+## 🌍 Deployment (v1 — production)
 
-### Frontend → Vercel
+End-to-end live setup. Roughly 20 minutes the first time.
+
+### 1 · MongoDB Atlas (database)
+1. https://www.mongodb.com/atlas → **M0 Free** cluster
+2. **Database Access** → add user (username + strong password) with read/write to `resumeDB`
+3. **Network Access** → temporarily allow `0.0.0.0/0` (tighten to your backend host's IP range once deployed)
+4. **Connect** → "Connect your application" → copy the `mongodb+srv://…` URI, replace `<password>` with the user password
+
+### 2 · Stripe (payments)
+1. https://dashboard.stripe.com → start in **test mode** (toggle top-right)
+2. **Products** → "Add product" → name `Pro` → add **two prices**:
+   - Monthly: `$9 USD` recurring → copy `price_…` → `STRIPE_PRICE_PRO_MONTHLY`
+   - Yearly: `$84 USD` recurring annual → copy `price_…` → `STRIPE_PRICE_PRO_YEARLY`
+3. **API keys** → copy the **Secret key** (`sk_test_…`) → `STRIPE_SECRET_KEY`
+4. **Webhooks** → Add endpoint at `https://<your-backend>/api/billing/webhook`. Subscribe to:
+   - `checkout.session.completed`
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+   Then copy the signing secret (`whsec_…`) → `STRIPE_WEBHOOK_SECRET`
+
+### 3 · Backend → Railway (or Render / Fly.io)
+1. https://railway.app → "Deploy from GitHub" → select this repo → choose `backend/` as the root
+2. Set environment variables (full list below)
+3. Deploy → grab the public URL (e.g. `https://resumeai-backend.up.railway.app`)
+4. Update Stripe webhook endpoint URL to point at the deployed backend
+5. Add the backend URL to **Vercel** as `VITE_API_URL`
+
+`backend/Procfile` and `backend/railway.json` are committed — Railway auto-detects them.
+
+### 4 · Frontend → Vercel
 ```bash
-cd client      # or `cd web` for the Next.js version
+cd client
 vercel --prod
 ```
-Set `VITE_API_URL` (or `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`) in Vercel project settings.
+In Vercel project settings → Environment Variables:
+- `VITE_API_URL = https://<backend-host>/api`
 
-### Backend (v1 only) → Railway
-- Create project from this repo → pick `backend/` directory
-- Add env: `MONGODB_URI`, `JWT_SECRET`, `GEMINI_API_KEY`
-- `railway.json` and `Procfile` are committed for one-click deploy
+Re-deploy after setting.
 
-### MongoDB → [Atlas free tier](https://www.mongodb.com/atlas)
-512 MB handles thousands of resumes.
+### 5 · Stitch CORS together
+Back in Railway, set `CLIENT_ORIGIN` to your Vercel URL **plus localhost** for dev:
+```
+CLIENT_ORIGIN=https://resumeai-seven-pi.vercel.app,http://localhost:5173
+```
+Redeploy the backend.
+
+### 6 · Custom domain (optional)
+- **Frontend**: Vercel project → Domains → add `resumeai.app` → set DNS A record / CNAME as instructed
+- **Backend**: Railway → Settings → add custom domain (e.g. `api.resumeai.app`) — then update Vercel `VITE_API_URL` accordingly + Stripe webhook URL
+- **CORS**: add the new origin to `CLIENT_ORIGIN`
+
+### Local Stripe webhook testing
+```bash
+# In a third terminal alongside `npm run dev`
+npm run stripe:listen        # Windows PowerShell
+npm run stripe:listen:bash   # Git Bash / WSL
+```
+Copy the printed `whsec_…` into `backend/.env` as `STRIPE_WEBHOOK_SECRET` — that secret is unique per CLI session.
+
+---
+
+## 🔐 Full environment variable matrix
+
+### Backend (Railway / Render)
+| Var | Required | Example | Notes |
+|---|---|---|---|
+| `NODE_ENV` | yes | `production` | |
+| `PORT` | yes | `5000` | Set automatically on Railway |
+| `MONGODB_URI` | yes | `mongodb+srv://…` | From Atlas Connect dialog |
+| `JWT_SECRET` | yes | `<64 random chars>` | Run `openssl rand -base64 48` |
+| `GEMINI_API_KEY` | yes | `AIza…` | Free tier 1 500 req/day |
+| `GEMINI_MODEL` | no | `gemini-2.5-flash` | Default |
+| `CLIENT_ORIGIN` | yes | `https://x.vercel.app,http://localhost:5173` | Comma-separated |
+| `STRIPE_SECRET_KEY` | no | `sk_test_…` / `sk_live_…` | Required to enable payments |
+| `STRIPE_WEBHOOK_SECRET` | no | `whsec_…` | Required to enable payments |
+| `STRIPE_PRICE_PRO_MONTHLY` | no | `price_…` | Required to enable payments |
+| `STRIPE_PRICE_PRO_YEARLY` | no | `price_…` | Optional — falls back to monthly |
+
+### Frontend (Vercel — `/client`)
+| Var | Required | Example |
+|---|---|---|
+| `VITE_API_URL` | yes | `https://<backend>/api` |
+
+### Next.js rebuild (Vercel — `/web`)
+| Var | Required | Example |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | yes | `https://xxxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | `eyJ…` |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | `eyJ…` (server-only) |
+| `GEMINI_API_KEY` | yes | `AIza…` |
+| `STRIPE_SECRET_KEY` | no | `sk_test_…` |
+| `STRIPE_WEBHOOK_SECRET` | no | `whsec_…` |
+| `STRIPE_PRICE_PRO_MONTHLY` | no | `price_…` |
+| `STRIPE_PRICE_PRO_YEARLY` | no | `price_…` |
+| `NEXT_PUBLIC_APP_URL` | yes | `https://resumeai.app` |
 
 ---
 

@@ -1,7 +1,12 @@
 import User from "../models/User.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { monthlyUsage, FREE_MONTHLY_LIMIT } from "../config/plans.js";
+import {
+  monthlyUsage,
+  FREE_MONTHLY_LIMIT,
+  isPaid,
+  isSubscribed,
+} from "../config/plans.js";
 
 const JWT_EXPIRES_IN = "7d";
 
@@ -16,8 +21,15 @@ const publicUser = (user) => ({
   email: user.email,
   plan: user.plan,
   usageCount: monthlyUsage(user),
-  usageLimit: user.plan === "premium" ? null : FREE_MONTHLY_LIMIT,
+  usageLimit: isPaid(user) ? null : FREE_MONTHLY_LIMIT,
+  // Billing state — null/undefined until first Checkout
+  isSubscribed: isSubscribed(user),
+  subscriptionStatus: user.subscriptionStatus || null,
+  currentPeriodEnd: user.currentPeriodEnd || null,
+  hasStripeCustomer: Boolean(user.stripeCustomerId),
 });
+
+export { publicUser };
 
 export const registerUser = async (req, res) => {
   try {
@@ -129,17 +141,15 @@ export const changePassword = async (req, res) => {
   }
 };
 
-export const togglePlan = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    user.plan = user.plan === "premium" ? "free" : "premium";
-    await user.save();
-
-    res.json({ user: publicUser(user) });
-  } catch (err) {
-    console.error("togglePlan error:", err);
-    res.status(500).json({ error: "Failed to update plan" });
-  }
+/**
+ * @deprecated Replaced by Stripe Checkout (see billingController).
+ * Returns 410 Gone — clients should call POST /api/billing/checkout instead.
+ * Kept as a route handler purely to give a helpful error rather than 404.
+ */
+export const togglePlan = async (_req, res) => {
+  res.status(410).json({
+    error:
+      "This endpoint has been removed. Upgrade is now handled via Stripe Checkout at POST /api/billing/checkout.",
+    code: "endpoint_removed",
+  });
 };

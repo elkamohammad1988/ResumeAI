@@ -28,7 +28,14 @@ export const authApi = {
   me: () => api.get("/auth/me").then((r) => r.data),
   changePassword: (data) =>
     api.post("/auth/change-password", data).then((r) => r.data),
-  togglePlan: () => api.post("/auth/toggle-plan").then((r) => r.data),
+};
+
+export const billingApi = {
+  // cadence: "monthly" | "yearly"
+  checkout: (cadence = "monthly") =>
+    api.post("/billing/checkout", { cadence }).then((r) => r.data),
+  portal: () => api.post("/billing/portal").then((r) => r.data),
+  me: () => api.get("/billing/me").then((r) => r.data),
 };
 
 export const resumeApi = {

@@ -3,6 +3,8 @@
     "dev": "concurrently -n backend,client -c blue,green \"npm --prefix backend run dev\" \"npm --prefix client run dev\"",
     "dev:backend": "npm --prefix backend run dev",
     "dev:client": "npm --prefix client run dev",
+    "stripe:listen": "powershell -ExecutionPolicy Bypass -File scripts/stripe-listen.ps1",
+    "stripe:listen:bash": "bash scripts/stripe-listen.sh",
     "screenshot": "node scripts/screenshot.mjs"
   },
   "dependencies": {

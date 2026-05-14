@@ -1,6 +1,8 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useToast } from "../context/ToastContext.jsx";
+import { billingApi } from "../api.js";
 import Reveal from "../components/Reveal.jsx";
 
 const TIERS = [
@@ -217,6 +219,76 @@ export default function Pricing() {
   );
 }
 
+function TierCta({ tier, billing, featured, isAuthenticated }) {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  // Base styles preserved exactly as before
+  const cls = `mt-6 w-full px-4 py-2.5 text-center text-sm font-semibold rounded-lg transition-all ${
+    featured
+      ? "text-black bg-[#00d96f] hover:bg-[#00c463] shadow-[0_8px_24px_-4px_rgba(0,217,111,0.5)] hover:-translate-y-px"
+      : "text-[#0a0a0a] dark:text-white bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+  } disabled:opacity-60 disabled:cursor-wait`;
+
+  // Free → register or dashboard
+  if (tier.name === "Free") {
+    return (
+      <Link
+        to={isAuthenticated ? "/generator" : "/register"}
+        className={cls}
+      >
+        {isAuthenticated ? "Use this plan" : tier.cta}
+      </Link>
+    );
+  }
+
+  // Team → mailto / contact
+  if (tier.name === "Team") {
+    return (
+      <a href={tier.href} className={cls}>
+        {tier.cta}
+      </a>
+    );
+  }
+
+  // Pro → Stripe Checkout (or register first)
+  const handleClick = async () => {
+    if (!isAuthenticated) {
+      navigate("/register?next=/pricing");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { url } = await billingApi.checkout(billing);
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      throw new Error("No checkout URL returned");
+    } catch (err) {
+      const msg =
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to start checkout.";
+      showToast({ type: "error", message: msg });
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button type="button" onClick={handleClick} disabled={busy} className={cls}>
+      {busy
+        ? "Redirecting to Stripe…"
+        : !isAuthenticated
+          ? "Start Pro"
+          : billing === "yearly"
+            ? "Subscribe — $7 / mo"
+            : "Subscribe — $9 / mo"}
+    </button>
+  );
+}
+
 function CompareCell({ value }) {
   if (value === true) {
     return (
@@ -300,18 +372,12 @@ function Tier({ tier, billing, isAuthenticated }) {
         {tier.summary}
       </p>
 
-      <Link
-        to={isAuthenticated && tier.name !== "Team" ? "/generator" : tier.href}
-        className={`mt-6 px-4 py-2.5 text-center text-sm font-semibold rounded-lg transition-all ${
-          featured
-            ? "text-black bg-[#00d96f] hover:bg-[#00c463] shadow-[0_8px_24px_-4px_rgba(0,217,111,0.5)] hover:-translate-y-px"
-            : "text-[#0a0a0a] dark:text-white bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-        }`}
-      >
-        {isAuthenticated && tier.name !== "Team"
-          ? "Use this plan"
-          : tier.cta}
-      </Link>
+      <TierCta
+        tier={tier}
+        billing={billing}
+        featured={featured}
+        isAuthenticated={isAuthenticated}
+      />
 
       <ul
         className={`mt-8 space-y-3 text-sm ${

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { authApi } from "../api.js";
+import { authApi, billingApi } from "../api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 
@@ -66,30 +66,45 @@ export default function Settings() {
     }
   };
 
-  const handleTogglePlan = async () => {
+  const handleUpgrade = async (cadence) => {
     setPlanLoading(true);
     try {
-      const data = await authApi.togglePlan();
-      setMe(data.user);
-      // Update localStorage user so the rest of the app sees it
-      try {
-        localStorage.setItem("user", JSON.stringify(data.user));
-      } catch (_) {
-        /* ignore */
+      const { url } = await billingApi.checkout(cadence);
+      if (url) {
+        window.location.href = url;
+        return;
       }
-      showToast({
-        type: "success",
-        message: `Plan switched to ${data.user.plan}.`,
-      });
+      throw new Error("No checkout URL returned");
     } catch (err) {
-      showToast({
-        type: "error",
-        message: err.response?.data?.error || "Failed to switch plan.",
-      });
-    } finally {
+      const msg =
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to start checkout.";
+      showToast({ type: "error", message: msg });
       setPlanLoading(false);
     }
   };
+
+  const handleManageBilling = async () => {
+    setPlanLoading(true);
+    try {
+      const { url } = await billingApi.portal();
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      throw new Error("No portal URL returned");
+    } catch (err) {
+      const msg =
+        err.response?.data?.error ||
+        err.message ||
+        "Failed to open billing portal.";
+      showToast({ type: "error", message: msg });
+      setPlanLoading(false);
+    }
+  };
+
+  const isSubscribed = me?.isSubscribed || me?.plan === "premium";
 
   return (
     <div className="bg-zinc-50/50 dark:bg-zinc-900/40 min-h-[calc(100vh-3.5rem)]">
@@ -131,23 +146,59 @@ export default function Settings() {
           )}
         </Card>
 
-        {/* Toggle plan (dev) */}
+        {/* Plan / billing */}
         <Card title="Plan">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            For testing purposes you can toggle between free and premium. Real
-            payments via Stripe are coming soon.
-          </p>
-          <button
-            onClick={handleTogglePlan}
-            disabled={planLoading}
-            className="mt-5 px-4 py-2 text-sm font-semibold text-[#0a0a0a] dark:text-white bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {planLoading
-              ? "Switching…"
-              : me?.plan === "premium"
-                ? "Switch to free"
-                : "Switch to premium"}
-          </button>
+          {isSubscribed ? (
+            <>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                You&apos;re on{" "}
+                <span className="font-semibold text-[#0a0a0a] dark:text-white">
+                  Pro
+                </span>
+                . Manage payment method, switch billing cadence, or cancel
+                anytime via the Stripe portal.
+              </p>
+              {me?.currentPeriodEnd && (
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
+                  Current period ends{" "}
+                  {new Date(me.currentPeriodEnd).toLocaleDateString(undefined, {
+                    dateStyle: "long",
+                  })}
+                </p>
+              )}
+              <button
+                onClick={handleManageBilling}
+                disabled={planLoading}
+                className="mt-5 px-4 py-2 text-sm font-semibold text-[#0a0a0a] dark:text-white bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {planLoading ? "Opening…" : "Manage subscription"}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                You&apos;re on the free plan ({me?.usageLimit ?? 5}{" "}
+                generations / month). Upgrade to Pro for unlimited generations
+                and JD targeting.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleUpgrade("monthly")}
+                  disabled={planLoading}
+                  className="px-4 py-2 text-sm font-semibold text-black bg-[#00d96f] hover:bg-[#00c463] rounded-lg shadow-sm disabled:opacity-50 transition-colors"
+                >
+                  {planLoading ? "Redirecting…" : "Pro — $9 / month"}
+                </button>
+                <button
+                  onClick={() => handleUpgrade("yearly")}
+                  disabled={planLoading}
+                  className="px-4 py-2 text-sm font-semibold text-[#0a0a0a] dark:text-white bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Pro — $7 / month (yearly)
+                </button>
+              </div>
+            </>
+          )}
         </Card>
 
         {/* Change password */}
