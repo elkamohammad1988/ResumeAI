@@ -3,32 +3,14 @@
 A full-stack web app that generates **ATS-optimized resumes and tailored cover letters** in seconds. Premium SaaS UI, multi-language output (EN / FR / AR with RTL), 4 polished PDF templates, photo embedding, live form preview, and Stripe-style design.
 
 > Two parallel versions in this repo:
-> - **`/client` + `/backend`** — production app (React 18 + Vite + Express + MongoDB + Gemini). Fully featured.
-> - **`/web`** — modern rebuild in Next.js 15 + TypeScript + Supabase (Phase 1: auth + landing + dashboard skeleton).
+> - **`/web`** — **canonical app** · Next.js 16 + TypeScript + Supabase Auth/Postgres + Stripe + Gemini. Full feature set (auth, generator, dashboard, billing, password reset, RLS, OWASP-hardened).
+> - **`/client` + `/backend`** — legacy production app (React 18 + Vite + Express + MongoDB + Gemini). Kept running for users created before the Supabase migration; new features land in `/web`.
 
 ---
 
 ## 📸 Screenshots
 
-### Landing
-![Landing page](client/public/screenshots/01-home-desktop.png)
-
-### Generator with live template preview
-![Generator with sample data + live preview](client/public/screenshots/06-generator-desktop.png)
-
-### Pricing
-![Pricing — yearly toggle + comparison](client/public/screenshots/02-pricing-desktop.png)
-
-### Dashboard
-![Dashboard — saved resumes + usage tracking](client/public/screenshots/06-generator-dashboard-desktop.png)
-
-### Auth (Sign in)
-![Sign in form](client/public/screenshots/03-login-desktop.png)
-
-### 404
-![Page not found — branded](client/public/screenshots/05-404-desktop.png)
-
-> Mobile + full-page captures live in [`client/public/screenshots/`](client/public/screenshots/).
+Regenerate locally — see the [Screenshots](#-regenerating-screenshots) section below. Captures land in `client/public/screenshots/` (legacy stack on :5173) or set `SHOT_BASE=http://localhost:3000` to capture the new `/web` stack.
 
 ---
 
@@ -56,11 +38,13 @@ A full-stack web app that generates **ATS-optimized resumes and tailored cover l
 - Express 4 · MongoDB (Mongoose) · JWT · bcrypt
 - Google Gemini 2.5 Flash · jsPDF + jspdf-autotable
 
-**v2 (`web/`)**
-- Next.js 15 (App Router · React Server Components · Server Actions)
+**v2 (`web/`) — canonical**
+- Next.js 16 (App Router · React Server Components · Server Actions)
 - TypeScript 5 (strict)
-- Supabase (Auth + Postgres + RLS)
+- Supabase (Auth + Postgres + RLS) with column-level grants + `SECURITY DEFINER` RPCs for privileged writes
+- Stripe (Checkout + Customer Portal + signed webhooks)
 - TailwindCSS 3 · `@supabase/ssr` for cookie-based session management
+- OWASP top-10 baseline: per-route rate limits, CSP/HSTS/X-Frame-Options headers, open-redirect defense, generic auth errors (no user enumeration), input validation via Zod, UUID guards
 
 ---
 
@@ -114,8 +98,13 @@ npm run dev               # http://localhost:3000
 ### Supabase setup
 1. Create a project at [supabase.com](https://supabase.com) (free tier)
 2. Settings → API → copy the URL + anon key + service_role
-3. SQL Editor → paste `web/supabase/migrations/001_initial.sql` → Run
+3. SQL Editor → run all three migrations **in order**:
+   - [`web/supabase/migrations/001_initial.sql`](web/supabase/migrations/001_initial.sql) — profiles, resumes, RLS, auth trigger
+   - [`web/supabase/migrations/002_stripe.sql`](web/supabase/migrations/002_stripe.sql) — Stripe columns + `is_premium` view
+   - [`web/supabase/migrations/003_security_hardening.sql`](web/supabase/migrations/003_security_hardening.sql) — **required**: fixes RLS bypass on `is_premium`, locks down `profiles` UPDATE to safe columns only, adds `SECURITY DEFINER` RPCs (`increment_my_usage`, `claim_stripe_customer_id`) so the user-context client can still drive quota + checkout
 4. Drop the values into `web/.env.local`
+
+> ⚠️ **Skipping 003 breaks production**: without it, the new code's checkout and quota-increment paths will fail with permission errors. Apply 003 *before* deploying the latest `/web` code.
 
 ---
 
@@ -183,6 +172,25 @@ Copy the printed `whsec_…` into `backend/.env` as `STRIPE_WEBHOOK_SECRET` — 
 
 ---
 
+## 🌍 Deployment (v2 — `/web` canonical)
+
+1. **Apply Supabase migration 003 first** (see the [Supabase setup](#supabase-setup) section). Skipping this will break checkout + quota tracking on the new code.
+2. Vercel → "Import Project" from GitHub → **Root Directory `web`** (framework auto-detected as Next.js).
+3. Add every variable from [`web/.env.example`](web/.env.example) under **Project Settings → Environment Variables**. Set `NEXT_PUBLIC_APP_URL` to your final domain.
+4. Deploy. After the first deploy, add a Stripe webhook at `https://<your-domain>/api/stripe/webhook` subscribed to:
+   - `checkout.session.completed`
+   - `customer.subscription.{created,updated,deleted}`
+   Copy the new `whsec_…` into Vercel as `STRIPE_WEBHOOK_SECRET` and redeploy.
+5. The CSP in [`web/next.config.ts`](web/next.config.ts) already allowlists `*.supabase.co`, `api.stripe.com`, `generativelanguage.googleapis.com`, and Stripe's checkout/billing frames — add new third-party hosts to `connect-src` / `frame-src` if you integrate more services.
+
+**Deployment ordering matters:** ship new code → verify the build → *then* apply migration 003. Doing it the other way breaks the currently-deployed version until the new code lands.
+
+### Multi-instance production note
+
+The rate-limiter in [`web/lib/rate-limit.ts`](web/lib/rate-limit.ts) is in-memory — fine for single-instance dev and Vercel's preview tier, but on serverless functions with high concurrency each container has its own bucket. For production scale, swap to `@upstash/ratelimit` (Redis-backed) — the helper API is intentionally similar.
+
+---
+
 ## 🔐 Full environment variable matrix
 
 ### Backend (Railway / Render)
@@ -238,6 +246,53 @@ All `/api/resume/*` and `/api/auth/me` routes require `Authorization: Bearer <to
 | DELETE | `/api/resume/:id` | Delete a saved resume |
 
 Returns `402 quota_exceeded` when free-tier user hits the monthly limit.
+
+---
+
+## 🛡️ Security
+
+OWASP top-10 baseline applied across both stacks. Key defenses (see inline comments for the full rationale):
+
+- **Authentication** — constant-time login on the backend (no user-enumeration via timing); generic auth errors on `/web` (no enumeration via message); password reset always returns success.
+- **Authorization** — Supabase RLS on every table; column-level grants on `profiles` so users cannot self-promote to Pro; `SECURITY DEFINER` RPCs for privileged writes (quota, customer linking); IDOR guards (`auth.uid()` + `user_id` filters on every query).
+- **Input validation** — Zod on every `/web` server action; lightweight typed validator on the backend ([`backend/middleware/validate.js`](backend/middleware/validate.js)) blocks NoSQL operator injection; UUID validation on resume `:id` params.
+- **Rate limiting** — per-IP and per-user limits on auth, password reset, AI generator, checkout, portal — both stacks.
+- **Transport / headers** — Helmet on backend; CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy on `/web` ([`web/next.config.ts`](web/next.config.ts)).
+- **Open-redirect defense** — `?next=` params validated to relative paths only ([`web/lib/safe-redirect.ts`](web/lib/safe-redirect.ts)).
+- **Error handling** — generic messages to clients; full detail logged server-side.
+- **Webhook integrity** — Stripe signature verification with raw body on both stacks; generic 400 returned on invalid signature.
+- **Secrets** — `.env` files gitignored at every level; only `.env.example` placeholders committed.
+- **Dependency hygiene** — `npm audit` clean on backend; known transitive moderate-severity advisories on `/web` (protobufjs, ws, postcss) blocked by Next 16 pinning — track for upstream patch, do not `--force` downgrade.
+
+### Production checklist
+
+- [ ] All `.env` values set in deployment environment, none committed
+- [ ] Supabase migration 003 applied
+- [ ] CORS allowlist set on backend (`CLIENT_ORIGIN`, no wildcards)
+- [ ] Stripe webhook secret matches the env webhook
+- [ ] `NEXT_PUBLIC_APP_URL` set to the final domain (used for password-reset redirect targets)
+- [ ] `npm audit --omit=dev` clean (or known issues documented)
+- [ ] Multi-instance prod: rate-limiter swapped to Redis-backed (`@upstash/ratelimit`)
+- [ ] MongoDB Atlas IP allowlist tightened from `0.0.0.0/0` to your backend host's egress IP
+
+---
+
+## 📸 Regenerating screenshots
+
+Puppeteer-based capture script ([`scripts/screenshot.mjs`](scripts/screenshot.mjs)). Requires Chrome installed locally and a running dev server.
+
+```powershell
+# Legacy stack (default: http://localhost:5173)
+npm run dev                  # in one terminal
+npm run screenshot           # in another
+
+# New /web stack
+cd web; npm run dev          # in one terminal
+$env:SHOT_BASE = "http://localhost:3000"
+npm run screenshot           # from repo root
+```
+
+Output → [`client/public/screenshots/`](client/public/screenshots/). The script registers a temporary demo user (`demo_<ts>@example.com`) to capture the authenticated routes — side effect: a row in your dev database.
 
 ---
 
