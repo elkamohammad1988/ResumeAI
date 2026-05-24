@@ -6,8 +6,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js"
+    "dev": "node init && nodemon server.js",
+    "start": "node init && node server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.1",
