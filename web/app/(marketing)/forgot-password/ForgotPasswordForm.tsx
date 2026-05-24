@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Card, CardBody } from "@/components/ui/card";
 
 export function ForgotPasswordForm() {
-  const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -46,11 +45,12 @@ export function ForgotPasswordForm() {
       <CardBody className="p-0 space-y-4">
         <form
           action={(formData) => {
-            setError(null);
             startTransition(async () => {
-              const res = await requestPasswordReset(formData);
-              if (res?.error) setError(res.error);
-              else if (res?.success) setSent(true);
+              // Always returns success — account-enumeration defense means
+              // the action never reveals whether the email was valid or
+              // rate-limited. Show the "check your inbox" view regardless.
+              await requestPasswordReset(formData);
+              setSent(true);
             });
           }}
           className="space-y-4"
@@ -67,12 +67,6 @@ export function ForgotPasswordForm() {
               placeholder="you@example.com"
             />
           </div>
-
-          {error && (
-            <p className="px-3 py-2 text-xs text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-md">
-              {error}
-            </p>
-          )}
 
           <Button type="submit" loading={isPending} className="w-full">
             {isPending ? "Sending…" : "Send recovery link"}

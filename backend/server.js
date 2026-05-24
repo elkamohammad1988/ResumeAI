@@ -38,22 +38,29 @@ app.use(
 );
 
 // ─── CORS (multi-origin via comma-separated env) ─────────────────────
-const allowedOrigins = (process.env.CLIENT_ORIGIN || "*")
+// In production, missing CLIENT_ORIGIN means deny-by-default (no wildcard).
+// In development, default to localhost only — never "*".
+const isProd = process.env.NODE_ENV === "production";
+const defaultDevOrigin = "http://localhost:5173,http://localhost:3000";
+const rawOrigins = process.env.CLIENT_ORIGIN || (isProd ? "" : defaultDevOrigin);
+const allowedOrigins = rawOrigins
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
 
+if (isProd && allowedOrigins.length === 0) {
+  console.warn(
+    "[cors] CLIENT_ORIGIN is unset in production — all cross-origin requests will be rejected.",
+  );
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow same-origin (no Origin header) and CLI tools
-      if (
-        !origin ||
-        allowedOrigins.includes("*") ||
-        allowedOrigins.includes(origin)
-      ) {
-        return cb(null, true);
-      }
+      // Allow same-origin/server-to-server calls (no Origin header).
+      // Wildcards are *not* honored, even if accidentally configured.
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: false,

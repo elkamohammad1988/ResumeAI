@@ -10,6 +10,12 @@ import {
 
 const JWT_EXPIRES_IN = "7d";
 
+// Pre-computed bcrypt hash of an impossible password, used to make login
+// constant-time regardless of whether the email exists. Prevents
+// user-enumeration via response-time timing (OWASP A07).
+const DUMMY_HASH =
+  "$2b$10$CwTycUXWue0Thq9StjUM0uJ8tF3rJ3z6oWxKqkY9CqM5kpqkVf5ze";
+
 const signToken = (user) =>
   jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET, {
     expiresIn: JWT_EXPIRES_IN,
@@ -74,19 +80,20 @@ export const registerUser = async (req, res) => {
 
 export const loginUser = async (req, res) => {
   try {
+    // Body has already been validated/coerced by validateBody middleware,
+    // so `email` and `password` are guaranteed-trimmed lowercase strings.
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ error: "Email and password are required" });
+    const user = await User.findOne({ email });
+
+    // Always run bcrypt — against the real hash when the user exists,
+    // against a dummy hash when not. Keeps timing uniform.
+    const passwordToCompare = user?.password ?? DUMMY_HASH;
+    const isMatch = await bcrypt.compare(password, passwordToCompare);
+
+    if (!user || !isMatch) {
+      return res.status(401).json({ error: "Invalid credentials" });
     }
-
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
 
     const token = signToken(user);
 

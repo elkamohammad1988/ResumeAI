@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import MarkdownText from "@/components/shared/MarkdownText";
 import { DownloadButtons } from "@/components/shared/DownloadButtons";
 import type { Template } from "@/types/database";
+import { isUuid } from "@/lib/safe-redirect";
 import { deleteResumeAction } from "./actions";
 
 export const metadata = { title: "Resume · ResumeAI" };
@@ -21,6 +22,10 @@ export default async function ResumeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Validate UUID shape before querying — avoids a Postgres 22P02 error
+  // bubbling up and gives a clean 404 for garbage paths.
+  if (!isUuid(id)) notFound();
+
   const supabase = await supabaseServer();
   const {
     data: { user },

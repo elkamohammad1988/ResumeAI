@@ -37,10 +37,14 @@ export async function POST(req: NextRequest) {
       env.STRIPE_WEBHOOK_SECRET,
     );
   } catch (err) {
+    // Log detail server-side; return a generic message to the caller. The
+    // raw verification error can include the timestamp/signature header
+    // contents, which we don't want to echo back to anyone probing this
+    // endpoint with crafted bodies.
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[stripe webhook] signature verification failed:", message);
     return NextResponse.json(
-      { error: `Webhook signature verification failed: ${message}` },
+      { error: "Invalid signature" },
       { status: 400 },
     );
   }

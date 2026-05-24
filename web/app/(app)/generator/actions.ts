@@ -6,8 +6,9 @@ import { z } from "zod";
 import { supabaseServer } from "@/lib/supabase/server";
 import { generateText } from "@/lib/ai/gemini";
 import { buildPrompt, splitOutput } from "@/lib/ai/prompts";
-import { FREE_LIMIT, isSameMonth, monthlyUsage } from "@/lib/usage";
+import { FREE_LIMIT, monthlyUsage } from "@/lib/usage";
 import { features } from "@/lib/env";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { isPremium, type Language, type Template } from "@/types/database";
 
 const formSchema = z.object({
@@ -70,6 +71,38 @@ export async function generateResumeAction(
   } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/generator");
 
+  // Per-user rate limit on top of the monthly quota — caps abuse of a single
+  // account (e.g. compromised session) and protects the upstream Gemini quota.
+  const limit = await rateLimit({
+    bucket: "generator:generate",
+    limit: 10,
+    windowMs: 60_000,
+    identifier: user.id,
+  });
+  if (!limit.ok) {
+    return {
+      ok: false,
+      error: `Too many generations. Try again in ${limit.retryAfterSeconds}s.`,
+      code: "unknown",
+    };
+  }
+  // Fallback IP-layer cap (defends against unauth bots if upstream auth ever
+  // misfires). Generous limit, just a safety net.
+  const ip = await clientIp();
+  const ipLimit = await rateLimit({
+    bucket: "generator:generate:ip",
+    limit: 30,
+    windowMs: 60_000,
+    identifier: ip,
+  });
+  if (!ipLimit.ok) {
+    return {
+      ok: false,
+      error: "Too many requests from this network. Try again shortly.",
+      code: "unknown",
+    };
+  }
+
   // Quota enforcement (free plan only)
   const { data: profile } = await supabase
     .from("profiles")
@@ -94,13 +127,13 @@ export async function generateResumeAction(
   try {
     raw = await generateText(buildPrompt(parsed.data));
   } catch (err) {
+    // Log details server-side; the upstream error can include API key
+    // fragments, quota URLs, internal request IDs — none of which the
+    // client needs to see.
     console.error("[generator] Gemini error:", err);
     return {
       ok: false,
-      error:
-        err instanceof Error
-          ? `AI generation failed: ${err.message}`
-          : "AI generation failed.",
+      error: "AI generation failed. Try again in a moment.",
       code: "unknown",
     };
   }
@@ -144,14 +177,18 @@ export async function generateResumeAction(
     };
   }
 
-  // Increment quota counter (free plan only)
-  if (!premium && profile) {
-    const now = new Date();
-    const reset = new Date(profile.usage_reset_at);
-    const update = isSameMonth(now, reset)
-      ? { usage_count: (profile.usage_count ?? 0) + 1 }
-      : { usage_count: 1, usage_reset_at: now.toISOString() };
-    await supabase.from("profiles").update(update as never).eq("id", user.id);
+  // Increment quota counter (free plan only). Uses the increment_my_usage
+  // RPC (SECURITY DEFINER) — the user role no longer has UPDATE on
+  // usage_count since migration 003, and the SQL CASE expression makes
+  // the monthly-rolling increment atomic (fixes a read-modify-write race
+  // under concurrent requests).
+  if (!premium) {
+    const { error: rpcErr } = await supabase.rpc("increment_my_usage");
+    if (rpcErr) {
+      // Don't fail the user-facing request — they already got their
+      // generation. Log so we can investigate quota drift.
+      console.error("[generator] increment_my_usage failed:", rpcErr);
+    }
   }
 
   revalidatePath("/dashboard");

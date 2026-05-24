@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { GoogleGenAI } from "@google/genai";
 import Resume from "../models/Resume.js";
 import User from "../models/User.js";
@@ -14,6 +15,30 @@ const RESUME_TAG = "===RESUME===";
 const COVER_TAG = "===COVER_LETTER===";
 
 const SUPPORTED_LANGS = ["en", "fr", "ar"];
+
+/**
+ * Validate that an :id param is a real Mongo ObjectId before querying.
+ * Without this, mongoose throws CastError on bad input which we catch
+ * generically but the latency is wasted — and historically CastError
+ * messages have leaked path/value detail into 500 responses.
+ */
+const isValidObjectId = (id) =>
+  typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+
+/**
+ * Verify a string is a small image data URL (jpeg/png/webp/gif) under the
+ * embedded-photo budget. Rejects arbitrary `data:` blobs, SVGs (XSS vector
+ * via embedded scripts even in <img>), and anything > ~500KB raw.
+ */
+const ALLOWED_PHOTO_MIME = /^data:image\/(jpeg|png|webp|gif);base64,/i;
+const MAX_PHOTO_DATA_URL_BYTES = 700_000;
+
+const sanitizePhoto = (raw) => {
+  if (typeof raw !== "string") return undefined;
+  if (raw.length > MAX_PHOTO_DATA_URL_BYTES) return undefined;
+  if (!ALLOWED_PHOTO_MIME.test(raw)) return undefined;
+  return raw;
+};
 
 const LANG_INSTRUCTIONS = {
   en: {
@@ -175,13 +200,7 @@ export const generateResumeAndCoverLetter = async (req, res) => {
     const raw = result.text || "";
     const { resume, coverLetter } = splitResponse(raw);
 
-    // Validate photo size (max ~500KB after base64 to avoid bloating Mongo)
-    const safePhoto =
-      typeof photo === "string" &&
-      photo.startsWith("data:image/") &&
-      photo.length < 700000
-        ? photo
-        : undefined;
+    const safePhoto = sanitizePhoto(photo);
 
     const saved = await Resume.create({
       user: req.user.id,
@@ -237,6 +256,9 @@ export const generateResumeAndCoverLetter = async (req, res) => {
 
 export const duplicateResume = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: "Resume not found" });
+    }
     const original = await Resume.findOne({
       _id: req.params.id,
       user: req.user.id,
@@ -293,6 +315,9 @@ export const listMyResumes = async (req, res) => {
 
 export const getMyResume = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: "Resume not found" });
+    }
     const item = await Resume.findOne({
       _id: req.params.id,
       user: req.user.id,
@@ -307,6 +332,9 @@ export const getMyResume = async (req, res) => {
 
 export const deleteMyResume = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(404).json({ error: "Resume not found" });
+    }
     const item = await Resume.findOneAndDelete({
       _id: req.params.id,
       user: req.user.id,
